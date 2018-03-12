@@ -1,3 +1,4 @@
+'use strict';
 require('isomorphic-fetch');
 require('dotenv').config();
 
@@ -8,11 +9,6 @@ const RedisStore = require('connect-redis')(session);
 const path = require('path');
 const logger = require('morgan');
 
-const webpack = require('webpack');
-const webpackMiddleware = require('webpack-dev-middleware');
-const webpackHotMiddleware = require('webpack-hot-middleware');
-const config = require('../config/webpack.config.js');
-
 const ShopifyAPIClient = require('shopify-api-node');
 const ShopifyExpress = require('@shopify/shopify-express');
 const {MemoryStrategy} = require('@shopify/shopify-express/strategies');
@@ -22,6 +18,9 @@ const {
   SHOPIFY_APP_HOST,
   SHOPIFY_APP_SECRET,
   NODE_ENV,
+  REDIS_HOST,
+  REDIS_PORT,
+  REDIS_PASS,
 } = process.env;
 
 const shopifyConfig = {
@@ -57,9 +56,30 @@ const isDevelopment = NODE_ENV !== 'production';
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(logger('dev'));
+
+
+var redisProdClient = null;
+
+if(isDevelopment == false) {
+	const redis = require('redis');
+
+	// Connect to a redis server provisioned over at
+	// Redis Labs. See the README for more info.
+	redisProdClient = redis.createClient(
+	  REDIS_PORT || '6379',
+	  REDIS_HOST || '127.0.0.1',
+	  {
+		'auth_pass': REDIS_PASS,
+		'return_buffers': true
+	  }
+	).on('error', (err) => console.error('ERR:REDIS:', err));
+	//console.log(redisProdClient);
+}
+
+
 app.use(
   session({
-    store: isDevelopment ? undefined : new RedisStore(),
+    store: new RedisStore({client: redisProdClient}),
     secret: SHOPIFY_APP_SECRET,
     resave: true,
     saveUninitialized: false,
@@ -68,6 +88,11 @@ app.use(
 
 // Run webpack hot reloading in dev
 if (isDevelopment) {
+  const webpack = require('webpack');
+  const webpackMiddleware = require('webpack-dev-middleware');
+  const webpackHotMiddleware = require('webpack-hot-middleware');
+  const config = require('../config/webpack.config.js');
+
   const compiler = webpack(config);
   const middleware = webpackMiddleware(compiler, {
     hot: true,
